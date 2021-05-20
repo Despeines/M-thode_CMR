@@ -1,0 +1,379 @@
+---
+title: "Méthode de Capture - Marquage - Recapture"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: fill
+runtime: shiny
+---
+
+
+
+```{js, echo=FALSE}
+$(function() {
+  $(window).load(function() {
+    $('#preloader').fadeOut('slow',function(){$(this).remove();});
+  });
+});
+```
+
+
+
+
+```{r setup, include=FALSE}
+suppressPackageStartupMessages(library(flexdashboard))
+suppressPackageStartupMessages(library(shiny))
+suppressPackageStartupMessages(library(rmarkdown))
+suppressPackageStartupMessages(library(DT))
+suppressPackageStartupMessages(library(data.table))
+```
+
+
+
+
+
+```{r}
+
+# Methode 1
+
+Sample_Usual_Method=function(n,M,NT,N)
+  # n sample size
+  # M number of marked individuals
+  # NT number of trials (simulations), each simulation is given as a row of x
+  # N population size
+{
+  p=min(c(M/N,1))
+  x=matrix(rbinom(NT*n,1,p),NT,n)
+  return(x)
+}
+
+Compute_Usual_Estimate=function(x,M)
+  # x data (matrix) collected over a sample
+  # M number of Marked individuals
+{
+  n=ncol(x)
+  p_Est=t(apply(x,1,cumsum)/(1:n))
+  E1=M/p_Est
+  E1[p_Est==0]=NA
+  return(list(N_est=E1,prob=p_Est))
+}
+
+
+
+# Methode 2
+
+
+Compute_Corrected_Estimate=function(x,M)
+  # x data (matrix) collected over a sample
+  # M number of Marked individuals
+{
+  n=ncol(x)
+  p_Est=t(apply(x,1,cumsum)/(1:n))
+  E2=t(M*((1:n)+1)/(apply(x,1,cumsum)+1))
+  return(list(N_est=E2,prob=p_Est))
+}
+
+
+#??? Methode 3
+
+Sample_Alternative_Method=function(n,NT,N)
+  # n sample size
+  # NT number of trials (simulations)
+  # N population size
+{
+  x=matrix(NA,NT,n)
+  x[,1]=0
+  x[,2]=rbinom(NT,1,1/N)
+  for (j in 3:n)
+  {
+    x[,j]=rbinom(NT,1,(j-1-apply(x[,1:(j-1)],1,sum))/N)
+  }
+  return(x)
+}
+
+
+Compute_Alternative_Estimate=function(x,MAX=20000)
+  # x (vector) data collected over a sample
+  # MAX maximal value, the estimate will be searched from 1 to MAX  
+{
+  n=length(x)
+  p=matrix(1,MAX,n)
+  M=0
+  for (j in 2:n)
+  {
+    for (N in 1:MAX)
+    {
+      if (x[j]==1) {p[N,j]=p[N,j-1]*M/N}
+      else {p[N,j]=p[N,j-1]*(N-M)/N}
+    }
+    if (x[j]==0) M=M+1
+  }
+  N_est=apply(p,2,which.max)
+  return(list(N_est=N_est,prob=p))
+}
+
+```
+
+
+
+A propos {data-icon="fa-lightbulb"}
+=====================================
+
+**Objectif**
+
+L’objectif de cette application web est de présenter le problème de dénombrement connu sous le nom de Capture - Marquage - Recapture. Cette technique est utilisée lors de l'estimation de la taille d'une population à partir de laquelle un échantillon peut être tiré afin de faire de l'inférence statistique. Cette technique est utilisée lors des enquêtes épidémiologiques, démographiques, plus précisement, dans le cas où la population est rare. 
+
+Nous utilisons cette technique dans le cadre de d'estimation du nombre total **N** inconnu de poissons se trouvant dans un étang. Nous rajoutons la contrainte de ne pouvoir observer qu’un poisson à la fois (c’est-à-dire que nous devons remettre à l’eau un poisson capturé avant de chercher à en attraper un autre). Pour que cela soit tout de même faisable, nous faisons une marque sur le poisson avant de le remettre à l’eau.
+
+
+
+**Méthode standard**
+
+La méthode classique consiste en trois étapes bien distinctes:
+
+* Etape de Capture: On capture et marque un nombre **M** (fixé à l’avance) de poissons ;
+
+* Etape de Repos: On attend que les poissons marqués se répartissent de manière homogène dans l’étang ;
+
+* Etape de Recapture: On capture à nouveau des (=**n**) poissons successivement et on note pour chacun d’entre eux la présence ou l’absence de marque ($x_i=1$ si on distingue une marque, et $x_i=0$ sinon). 
+
+Nous remarquons facilement que la probabilité d’attraper, lors de la troisième phase, un poisson marqué est donnée par $p_M=\frac{M}{N}$, ce qui donne de manière immédiate $N=\frac{M}{p_M}$. Bien évidemment, $p_M$ étant inconnue, nous ne pouvons pas nous servir directement de cette expression pour donner la valeur de **N**, mais nous pouvons par contre en donner une estimation en utilisant la proportion $f_M$ de poissons pêchés lors de la troisième phase sur lesquels on a observé une marque ce qui donne :
+
+$$\hat N_1=\frac{M}{f_M}$$
+Parmi les défauts de cette méthode, nous remarquons que l’estimateur est non défini tant que nous n’avons pas observé un poisson marqué. Pour répondre à ce problème et améliorer les propriétés théorique de notre estimateur, nous proposons souvent uen version corrigée de celui-ci.
+
+
+
+**Version corrigée**
+
+Pour répondre aux critiques faites sur le premier estimateur $\hat N_1$, nous proposONS un estimateur corrigé $$\hat N_2=\frac{M(n+1)}{f_M(n+1)}$$
+
+
+
+**Méthode alternative**
+
+Nous nous intéressons également à une méthode alternative où nous ne commencons pas par une étape préliminaire de capture et de marquage. L’idée est d’attraper des poissons en notant s’ils sont marqués ou pas, et de les marqués s’ils ne le sont pas encore. On peut calculer en fonction de **N** la vraisemblance liée aux données et proposer un estimateur de type Maximum de Vraisemblance.
+
+
+
+
+Méthode classique {data-icon="fa-signal"}
+=====================================
+
+
+```{r}
+#===============================================UI=================================================
+                            sidebarLayout(
+                              sidebarPanel(
+                                sliderInput("n","Taille d'échantillon:",min = 1,max = 100,value = 30,width = "100%"),
+                                sliderInput("M","Nombre de poissons marques:",min = 0,max = 100,value = 20,width = "100%"),
+                                sliderInput("NT","Nombre de simulations :",min = 0,max = 100,value = 100,width = "100%"),
+                                sliderInput("N","Taille de la population :",min =0,max = 100,value =30,width = "100%"),
+                                br(),
+                                radioButtons("plot","Choisir une méthode:", c("Méthode standard","Version corrigée"), 
+                                             selected = "Méthode standard", inline = T),
+                              ),
+                            mainPanel(
+                                plotOutput("scatterplot1")))
+
+
+
+```
+
+
+
+### Figure 1
+
+```{r graph 1 & 2, fig.dim=c(15,4)}
+
+    renderPlot({
+
+    vect=vector()
+    vect1=vector()
+    sq=seq(input$n,2*input$n)
+    
+   for(i in sq){
+     SAMPLE=Sample_Usual_Method(i,input$M,input$NT,input$N)
+     
+     N1=Compute_Usual_Estimate(SAMPLE,input$M)$N_est
+     
+     RES=N1[,i]
+     
+     Emp.Bias=mean(RES)-input$N
+     
+     Emp.EQ=var(RES)
+     
+     vect=rbind(vect,Emp.Bias)
+     vect1=rbind(vect1,Emp.EQ)
+   }
+    
+      
+      if(input$plot=="Méthode standard"){
+        
+      par(mfrow=c(1,2))
+      plot1<-plot(seq(input$n,2*input$n), vect,type = "b", main = "Evolution du biais(Méthode standard)", ylab = "Biais", xlab="")
+      plot1
+      points(which.min(vect)+input$n-1, vect[which.min(vect)], col = "red", cex = 2, lwd = 3)
+      
+      plot2<-plot(seq(input$n,2*input$n), vect1,type = "b", main = "Evolution de la variance(Méthode standard)", ylab = "Variance",xlab="")
+      plot2
+      points(which.min(vect1)+input$n-1, vect1[which.min(vect1)], col = "red", cex = 2, lwd = 3)
+    
+  } else {
+  
+    vect=vector()
+    vect1=vector()
+    sq=seq(input$n,2*input$n)
+    
+    for(i in sq){
+      SAMPLE=Sample_Usual_Method(i,input$M,input$NT,input$N)
+      
+      N1=Compute_Usual_Estimate(SAMPLE,input$M)$N_est
+      
+      RES=N1[,i]
+      
+      Emp.Bias=mean(RES)-input$N
+      
+      Emp.EQ=var(RES)
+      
+      vect=rbind(vect,Emp.Bias)
+      vect1=rbind(vect1,Emp.EQ)
+    }
+    
+    vect2=vector()
+    vect3=vector()
+    sq1=seq(input$n,2*input$n)
+    
+    for (i in sq1){
+      N2=Compute_Corrected_Estimate(SAMPLE,input$M)$N_est
+      
+      RES1=N2[,i]
+      
+      Emp.Bias1=mean(RES1)-input$N
+      
+      Emp.EQ1=var(RES1)
+      
+      vect2=rbind(vect2,Emp.Bias1)
+      vect3=rbind(vect3,Emp.EQ1)
+      
+    }
+    
+    
+    par(mfrow=c(1,2))
+    plot3<-plot(seq(input$n,2*input$n), vect2,type = "b",main = "Evolution du biais(Version corrigée)", ylab = "Biais", xlab="")
+    plot3
+    points(which.min(vect2)+input$n-1, vect2[which.min(vect2)], col = "red", cex = 2, lwd = 3)
+    
+    plot4<-plot(seq(input$n,2*input$n), vect3,type = "b",main = "Evolution de la variance(Version corrigée)", ylab = "Variance", xlab="")
+    plot4
+    points(which.min(vect3)+input$n-1, vect3[which.min(vect3)], col = "red", cex = 2, lwd = 3)
+    
+  }
+      
+  })
+
+```
+
+
+
+Méthode corrigée {data-icon="fa-chart-line"}
+=====================================
+
+Column 2
+--------------------------------------------------
+
+```{r}
+                            sidebarLayout(
+                              sidebarPanel(
+                                sliderInput("N_Alt","Nombre de simulations alternatives:",min =0,max = 100,value =100) , 
+                                sliderInput("NT_Alt","Nombre de simulations alternatives:",min = 0,max = 1000,value = 100),
+                                sliderInput("S_Alt","Taille d'échantillon alternatif:",min =0,max = 100,value =50),
+                                sliderInput("MAX","Maximum:",min =0,max = 2000,value =2000,step= .01)
+                              ), 
+                              mainPanel(
+                               plotOutput("scatterplot3"))
+                            )
+
+```
+
+
+### Figure 2
+
+```{r graph 3}
+
+  renderPlot({ 
+  
+    vect5=vector()
+    vect6=vector()
+    
+    sq2=seq(input$n+input$M,input$n+input$M+1)
+    
+    for (xxx in sq2){
+      
+      SAMPLE2=Sample_Alternative_Method(xxx,input$NT_Alt,input$N_Alt)
+      N3=rep(NA,input$NT_Alt)
+      for (i in 1:input$NT_Alt) 
+      {
+        N3[i]=Compute_Alternative_Estimate(SAMPLE2[i,],input$MAX)$N_est[xxx]
+      }
+      RES3=N3
+      
+      Emp.Bias=mean(RES3)-input$N_Alt
+      Emp.EQ=var(RES3)
+      
+      vect5=rbind(vect5,Emp.Bias)
+      vect6=rbind(vect6,Emp.EQ)
+    }
+     
+    par(mfrow=c(1,2))
+    plot(seq(input$n+input$M,input$n+input$M+1), vect5,  type = "b", main = "Evolution du biais(Methode Alternative)", ylab ="Biais",xlab="")
+    points(which.min(vect5)+input$NT_Alt-1, vect5[which.min(vect5)], col = "red", cex = 2, lwd = 3)
+    
+    plot(seq(input$n+input$M,input$n+input$M+1), vect6,  type = "b", main = "Evolution de la variance(Methode Alternative)", ylab = "Variance",xlab="")
+    points(which.min(vect6)+input$NT_Alt-1, vect6[which.min(vect6)], col = "red", cex = 2, lwd = 3)
+   
+  })
+```
+
+
+
+Data {data-icon="fa-database"}
+=====================================
+
+**Tabeau 1 (SAMPLE): Données générées par Simulation**
+
+```{r}
+  
+  renderDataTable({
+    vect=vector()
+    vect1=vector()
+    sq=seq(input$n,2*input$n)
+    
+    for(i in sq){
+      SAMPLE=Sample_Usual_Method(i,input$M,input$NT,input$N)
+      
+      N1=Compute_Usual_Estimate(SAMPLE,input$M)$N_est
+      
+      RES=N1[,i]
+      
+      Emp.Bias=mean(RES)-input$N
+      
+      Emp.EQ=var(RES)
+      
+      vect=rbind(vect,Emp.Bias)
+      vect1=rbind(vect1,Emp.EQ)
+    }
+    
+    
+   #Table de donnees 1 (#SAMPLE)
+df_sample1<-as.data.frame(SAMPLE)
+df_sample1
+})
+
+```
+
+
+
+
+
+    
